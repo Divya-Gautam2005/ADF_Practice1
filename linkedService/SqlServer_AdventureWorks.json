@@ -1,0 +1,21 @@
+{
+	"name": "SqlServer_AdventureWorks",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"annotations": [],
+		"type": "SqlServer",
+		"typeProperties": {
+			"server": "localhost\\SQLEXPRESS",
+			"database": "Adventureworks",
+			"encrypt": "mandatory",
+			"trustServerCertificate": true,
+			"authenticationType": "Windows",
+			"userName": "DIVYAGAUTAM\\Divya Gautam",
+			"encryptedCredential": "eyJDcmVkZW50aWFsSWQiOiIzOGI0NTk2Ny0yYzRiLTQ0NTEtOTI0Ni05YzJlZmVjYTQ3NjUiLCJWZXJzaW9uIjoiMi4wIiwiQ2xhc3NUeXBlIjoiTWljcm9zb2Z0LkRhdGFQcm94eS5Db3JlLkludGVyU2VydmljZURhdGFDb250cmFjdC5DcmVkZW50aWFsU1UwNkNZMTQifQ=="
+		},
+		"connectVia": {
+			"referenceName": "SHIR-AdventureWorks",
+			"type": "IntegrationRuntimeReference"
+		}
+	}
+}

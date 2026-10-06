@@ -1,0 +1,17 @@
+{
+	"name": "DS_SQL_ProductSubcategory",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "SqlServer_AdventureWorks",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "SqlServerTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": "Production",
+			"table": "ProductSubcategory"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

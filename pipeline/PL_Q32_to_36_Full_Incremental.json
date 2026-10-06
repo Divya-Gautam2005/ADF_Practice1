@@ -1,0 +1,1385 @@
+{
+	"name": "PL_Q32_to_36_Full_Incremental",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup1",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "SqlServerSource",
+						"sqlReaderQuery": "SELECT\n    SourceSchema,\n    SourceTable,\n    SourceQuery,\n    LoadType,\n    WatermarkColumn,\n    LastWatermarkValue,\n    FileFormat,\n    ContainerName,\n    FolderPath,\n    FileName,\n    TargetSchema,\n    TargetTable,\n    PreCopyScript,\n    IsActive\nFROM stg.ADF_ControlTable\nWHERE IsActive = 1;",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_SQL_Dynamic",
+						"type": "DatasetReference",
+						"parameters": {
+							"TableName": "ADF_ControlTable",
+							"SchemaName": "stg"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach1",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup1').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Switch1",
+							"type": "Switch",
+							"dependsOn": [
+								{
+									"activity": "Log_Execution_Start",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"on": {
+									"value": "@item().LoadType",
+									"type": "Expression"
+								},
+								"cases": [
+									{
+										"value": "Full",
+										"activities": [
+											{
+												"name": "CopyADLS_SQL_f",
+												"type": "Copy",
+												"dependsOn": [
+													{
+														"activity": "Execute_Format_Handler_Full",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 2,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "DelimitedTextSource",
+														"storeSettings": {
+															"type": "AzureBlobFSReadSettings",
+															"recursive": true,
+															"enablePartitionDiscovery": false
+														},
+														"formatSettings": {
+															"type": "DelimitedTextReadSettings"
+														}
+													},
+													"sink": {
+														"type": "SqlServerSink",
+														"preCopyScript": {
+															"value": "@item().PreCopyScript",
+															"type": "Expression"
+														},
+														"writeBehavior": "insert",
+														"sqlWriterUseTableLock": false
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "@item().FolderPath",
+															"FileName": {
+																"value": "@item().FileName",
+																"type": "Expression"
+															}
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "DS_SQL_Dynamic",
+														"type": "DatasetReference",
+														"parameters": {
+															"TableName": {
+																"value": "@item().TargetTable",
+																"type": "Expression"
+															},
+															"SchemaName": "@item().TargetSchema"
+														}
+													}
+												]
+											},
+											{
+												"name": "LookupSourceCount",
+												"type": "Lookup",
+												"dependsOn": [
+													{
+														"activity": "CopyADLS_SQL_f",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "SqlServerSource",
+														"sqlReaderQuery": {
+															"value": "@concat(\n'SELECT COUNT(*) AS SourceCount FROM ',\nitem().SourceSchema,\n'.',\nitem().SourceTable\n)",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"dataset": {
+														"referenceName": "DS_SQL_Dynamic",
+														"type": "DatasetReference",
+														"parameters": {
+															"TableName": "@item().SourceTable",
+															"SchemaName": "@item().SourceSchema"
+														}
+													}
+												}
+											},
+											{
+												"name": "LookupTargetCount",
+												"type": "Lookup",
+												"dependsOn": [
+													{
+														"activity": "LookupSourceCount",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "SqlServerSource",
+														"sqlReaderQuery": {
+															"value": "@concat(\n'SELECT COUNT(*) AS DestinationCount FROM ',\nitem().TargetSchema,\n'.',\nitem().TargetTable\n)",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"dataset": {
+														"referenceName": "DS_SQL_Dynamic",
+														"type": "DatasetReference",
+														"parameters": {
+															"TableName": "@item().TargetTable",
+															"SchemaName": "@item().TargetSchema"
+														}
+													}
+												}
+											},
+											{
+												"name": "ArchiveError",
+												"type": "Copy",
+												"dependsOn": [
+													{
+														"activity": "CopyADLS_SQL_f",
+														"dependencyConditions": [
+															"Failed"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "DelimitedTextSource",
+														"storeSettings": {
+															"type": "AzureBlobFSReadSettings",
+															"recursive": true,
+															"enablePartitionDiscovery": false
+														},
+														"formatSettings": {
+															"type": "DelimitedTextReadSettings"
+														}
+													},
+													"sink": {
+														"type": "DelimitedTextSink",
+														"storeSettings": {
+															"type": "AzureBlobFSWriteSettings"
+														},
+														"formatSettings": {
+															"type": "DelimitedTextWriteSettings",
+															"quoteAllText": true,
+															"fileExtension": ".txt"
+														}
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "archive/error",
+															"FileName": "@item().FileName"
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "archive/error",
+															"FileName": "@item().FileName"
+														}
+													}
+												]
+											},
+											{
+												"name": "Archive_Success_copy1",
+												"type": "Copy",
+												"dependsOn": [
+													{
+														"activity": "Set_Validation_Status",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "DelimitedTextSource",
+														"storeSettings": {
+															"type": "AzureBlobFSReadSettings",
+															"recursive": true,
+															"enablePartitionDiscovery": false
+														},
+														"formatSettings": {
+															"type": "DelimitedTextReadSettings"
+														}
+													},
+													"sink": {
+														"type": "DelimitedTextSink",
+														"storeSettings": {
+															"type": "AzureBlobFSWriteSettings"
+														},
+														"formatSettings": {
+															"type": "DelimitedTextWriteSettings",
+															"quoteAllText": true,
+															"fileExtension": ".txt"
+														}
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "@item().FolderPath",
+															"FileName": {
+																"value": "@item().FileName",
+																"type": "Expression"
+															}
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "archive/success",
+															"FileName": {
+																"value": "@item().FileName",
+																"type": "Expression"
+															}
+														}
+													}
+												]
+											},
+											{
+												"name": "Log_Execution_Success",
+												"type": "SqlServerStoredProcedure",
+												"dependsOn": [
+													{
+														"activity": "Archive_Success_copy1",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"storedProcedureName": "[stg].[usp_LogADFExecution]",
+													"storedProcedureParameters": {
+														"PipelineName": {
+															"value": {
+																"value": "@pipeline().Pipeline",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"SourceSchema": {
+															"value": {
+																"value": "@item().SourceSchema",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"SourceTable": {
+															"value": {
+																"value": "@item().SourceTable",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"Status": {
+															"value": "Success",
+															"type": "String"
+														},
+														"StartTime": {
+															"value": {
+																"value": "@utcnow()",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														},
+														"EndTime": {
+															"value": {
+																"value": "@utcnow()",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														},
+														"SourceCount": {
+															"value": {
+																"value": "@activity('LookupSourceCount').output.firstRow.SourceCount",
+																"type": "Expression"
+															},
+															"type": "Int32"
+														},
+														"DestinationCount": {
+															"value": {
+																"value": "@activity('LookupTargetCount').output.firstRow.DestinationCount",
+																"type": "Expression"
+															},
+															"type": "Int32"
+														},
+														"FailureDetails": {
+															"value": "",
+															"type": "String"
+														}
+													}
+												},
+												"linkedServiceName": {
+													"referenceName": "SqlServer_AdventureWorks",
+													"type": "LinkedServiceReference"
+												}
+											},
+											{
+												"name": "Log_Execution_Failure",
+												"type": "SqlServerStoredProcedure",
+												"dependsOn": [
+													{
+														"activity": "ArchiveError",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"storedProcedureName": "[stg].[usp_LogADFExecution]",
+													"storedProcedureParameters": {
+														"PipelineName": {
+															"value": {
+																"value": "@pipeline().Pipeline",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"SourceSchema": {
+															"value": {
+																"value": "@item().SourceSchema",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"SourceTable": {
+															"value": {
+																"value": "@item().SourceTable",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"Status": {
+															"value": "Failed",
+															"type": "String"
+														},
+														"StartTime": {
+															"value": {
+																"value": "@utcnow()",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														},
+														"EndTime": {
+															"value": {
+																"value": "@utcnow()",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														},
+														"SourceCount": {
+															"value": "0",
+															"type": "Int32"
+														},
+														"DestinationCount": {
+															"value": "0",
+															"type": "Int32"
+														},
+														"FailureDetails": {
+															"value": {
+																"value": "@activity('CopyADLS_SQL_f').error.message",
+																"type": "Expression"
+															},
+															"type": "String"
+														}
+													}
+												},
+												"linkedServiceName": {
+													"referenceName": "SqlServer_AdventureWorks",
+													"type": "LinkedServiceReference"
+												}
+											},
+											{
+												"name": "Set_Validation_Status",
+												"type": "SetVariable",
+												"dependsOn": [
+													{
+														"activity": "LookupTargetCount",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"variableName": "ValidationStatus",
+													"value": {
+														"value": "@if(\n    equals(\n        activity('LookupSourceCount').output.firstRow.SourceCount,\n        activity('LookupTargetCount').output.firstRow.DestinationCount\n    ),\n    'PASS',\n    'FAIL'\n)",
+														"type": "Expression"
+													}
+												}
+											},
+											{
+												"name": "Execute_Format_Handler_Full",
+												"type": "ExecutePipeline",
+												"dependsOn": [],
+												"policy": {
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"pipeline": {
+														"referenceName": "PL_Format_Handler",
+														"type": "PipelineReference"
+													},
+													"waitOnCompletion": true,
+													"parameters": {
+														"FileFormat": {
+															"value": "@item().FileFormat",
+															"type": "Expression"
+														},
+														"FolderPath": {
+															"value": "@item().FolderPath",
+															"type": "Expression"
+														},
+														"FileName": {
+															"value": "@item().FileName",
+															"type": "Expression"
+														},
+														"SourceSchema": {
+															"value": "@item().SourceSchema",
+															"type": "Expression"
+														},
+														"SourceTable": {
+															"value": "@item().SourceTable",
+															"type": "Expression"
+														},
+														"SourceQuery": {
+															"value": "@item().SourceQuery",
+															"type": "Expression"
+														}
+													}
+												}
+											}
+										]
+									},
+									{
+										"value": "Incremental",
+										"activities": [
+											{
+												"name": "Lookup_PreviousWatermark",
+												"type": "Lookup",
+												"dependsOn": [],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "SqlServerSource",
+														"sqlReaderQuery": {
+															"value": "@concat(\n'SELECT LastWatermarkValue FROM stg.ADF_WatermarkControl WHERE SchemaName = ''',\nitem().SourceSchema,\n''' AND TableName = ''',\nitem().SourceTable,\n''''\n)",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"dataset": {
+														"referenceName": "DS_SQL_Dynamic",
+														"type": "DatasetReference",
+														"parameters": {
+															"TableName": "ADF_WatermarkControl",
+															"SchemaName": "stg"
+														}
+													}
+												}
+											},
+											{
+												"name": "Lookup_CurrentWatermark",
+												"type": "Lookup",
+												"dependsOn": [
+													{
+														"activity": "Lookup_PreviousWatermark",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "SqlServerSource",
+														"sqlReaderQuery": {
+															"value": "@concat(\n'SELECT MAX(',\nitem().WatermarkColumn,\n') AS CurrentWatermark FROM ',\nitem().SourceSchema,\n'.',\nitem().SourceTable\n)",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"dataset": {
+														"referenceName": "DS_SQL_Dynamic",
+														"type": "DatasetReference",
+														"parameters": {
+															"TableName": {
+																"value": "@item().SourceTable",
+																"type": "Expression"
+															},
+															"SchemaName": "@item().SourceSchema"
+														}
+													}
+												}
+											},
+											{
+												"name": "Update_I",
+												"type": "SqlServerStoredProcedure",
+												"dependsOn": [
+													{
+														"activity": "Archive_Success_I",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"storedProcedureName": "[stg].[usp_UpdateADFWatermark]",
+													"storedProcedureParameters": {
+														"SchemaName": {
+															"value": {
+																"value": "@item().SourceSchema",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"TableName": {
+															"value": {
+																"value": "@item().SourceTable",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"newWatermark": {
+															"value": {
+																"value": "@activity('Lookup_CurrentWatermark').output.firstRow.CurrentWatermark",
+																"type": "Expression"
+															},
+															"type": "String"
+														}
+													}
+												},
+												"linkedServiceName": {
+													"referenceName": "SqlServer_AdventureWorks",
+													"type": "LinkedServiceReference"
+												}
+											},
+											{
+												"name": "CopyADLS_SQL",
+												"type": "Copy",
+												"dependsOn": [
+													{
+														"activity": "Execute_Format_Handler_Incremental",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 2,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "DelimitedTextSource",
+														"storeSettings": {
+															"type": "AzureBlobFSReadSettings",
+															"recursive": true,
+															"enablePartitionDiscovery": false
+														},
+														"formatSettings": {
+															"type": "DelimitedTextReadSettings"
+														}
+													},
+													"sink": {
+														"type": "SqlServerSink",
+														"preCopyScript": {
+															"value": "@item().PreCopyScript",
+															"type": "Expression"
+														},
+														"writeBehavior": "insert",
+														"sqlWriterUseTableLock": false
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "@item().FolderPath",
+															"FileName": "@item().FileName"
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "DS_SQL_Dynamic",
+														"type": "DatasetReference",
+														"parameters": {
+															"TableName": {
+																"value": "@item().TargetTable",
+																"type": "Expression"
+															},
+															"SchemaName": "@item().TargetSchema"
+														}
+													}
+												]
+											},
+											{
+												"name": "Archive_Success_I",
+												"type": "Copy",
+												"dependsOn": [
+													{
+														"activity": "Set_Validation_Status_Incremental",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "DelimitedTextSource",
+														"storeSettings": {
+															"type": "AzureBlobFSReadSettings",
+															"recursive": true,
+															"enablePartitionDiscovery": false
+														},
+														"formatSettings": {
+															"type": "DelimitedTextReadSettings"
+														}
+													},
+													"sink": {
+														"type": "DelimitedTextSink",
+														"storeSettings": {
+															"type": "AzureBlobFSWriteSettings"
+														},
+														"formatSettings": {
+															"type": "DelimitedTextWriteSettings",
+															"quoteAllText": true,
+															"fileExtension": ".txt"
+														}
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "@item().FolderPath",
+															"FileName": {
+																"value": "@item().FileName",
+																"type": "Expression"
+															}
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "archive/success",
+															"FileName": {
+																"value": "@item().FileName",
+																"type": "Expression"
+															}
+														}
+													}
+												]
+											},
+											{
+												"name": "ArchiveError_I",
+												"type": "Copy",
+												"dependsOn": [
+													{
+														"activity": "CopyADLS_SQL",
+														"dependencyConditions": [
+															"Failed"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "DelimitedTextSource",
+														"storeSettings": {
+															"type": "AzureBlobFSReadSettings",
+															"recursive": true,
+															"enablePartitionDiscovery": false
+														},
+														"formatSettings": {
+															"type": "DelimitedTextReadSettings"
+														}
+													},
+													"sink": {
+														"type": "DelimitedTextSink",
+														"storeSettings": {
+															"type": "AzureBlobFSWriteSettings"
+														},
+														"formatSettings": {
+															"type": "DelimitedTextWriteSettings",
+															"quoteAllText": true,
+															"fileExtension": ".txt"
+														}
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "archive/error",
+															"FileName": {
+																"value": "@item().FileName",
+																"type": "Expression"
+															}
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "DS_ADLS_Dynamic_CSV",
+														"type": "DatasetReference",
+														"parameters": {
+															"FolderName": "archive/error",
+															"FileName": "@item().FileName"
+														}
+													}
+												]
+											},
+											{
+												"name": "LookupTargetCount_Incremental",
+												"type": "Lookup",
+												"dependsOn": [
+													{
+														"activity": "CopyADLS_SQL",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "SqlServerSource",
+														"sqlReaderQuery": {
+															"value": "@concat(\n'SELECT COUNT(*) AS DestinationCount FROM ',\nitem().TargetSchema,\n'.',\nitem().TargetTable\n)",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"dataset": {
+														"referenceName": "DS_SQL_Dynamic",
+														"type": "DatasetReference",
+														"parameters": {
+															"TableName": "@item().TargetSchema",
+															"SchemaName": "@item().TargetTable"
+														}
+													}
+												}
+											},
+											{
+												"name": "Log_Execution_Failure_I",
+												"type": "SqlServerStoredProcedure",
+												"dependsOn": [
+													{
+														"activity": "ArchiveError_I",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"storedProcedureName": "[stg].[usp_LogADFExecution]",
+													"storedProcedureParameters": {
+														"PipelineName": {
+															"value": {
+																"value": "@pipeline().Pipeline",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"SourceSchema": {
+															"value": {
+																"value": "@item().SourceSchema",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"SourceTable": {
+															"value": {
+																"value": "@item().SourceTable",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"Status": {
+															"value": "Failed",
+															"type": "String"
+														},
+														"StartTime": {
+															"value": {
+																"value": "@utcnow()",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														},
+														"EndTime": {
+															"value": {
+																"value": "@utcnow()",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														},
+														"SourceCount": {
+															"value": "",
+															"type": "Int32"
+														},
+														"DestinationCount": {
+															"value": "",
+															"type": "Int32"
+														},
+														"FailureDetails": {
+															"value": {
+																"value": "@activity('CopyADLS_SQL').error.message",
+																"type": "Expression"
+															},
+															"type": "String"
+														}
+													}
+												},
+												"linkedServiceName": {
+													"referenceName": "SqlServer_AdventureWorks",
+													"type": "LinkedServiceReference"
+												}
+											},
+											{
+												"name": "Set_Validation_Status_Incremental",
+												"type": "SetVariable",
+												"dependsOn": [
+													{
+														"activity": "LookupTargetCount_Incremental",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"variableName": "ValidationStatus",
+													"value": {
+														"value": "@if(\n    equals(\n        activity('LookupSourceCount_Incremental').output.firstRow.SourceCount,\n        activity('LookupTargetCount_Incremental').output.firstRow.DestinationCount\n    ),\n    'PASS',\n    'FAIL'\n)",
+														"type": "Expression"
+													}
+												}
+											},
+											{
+												"name": "Log_Execution_Success_I",
+												"type": "SqlServerStoredProcedure",
+												"dependsOn": [
+													{
+														"activity": "Update_I",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"storedProcedureName": "[stg].[usp_LogADFExecution]",
+													"storedProcedureParameters": {
+														"PipelineName": {
+															"value": {
+																"value": "@pipeline().Pipeline",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"SourceSchema": {
+															"value": {
+																"value": "@item().SourceSchema",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"SourceTable": {
+															"value": {
+																"value": "@item().SourceTable",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"Status": {
+															"value": "Success",
+															"type": "String"
+														},
+														"StartTime": {
+															"value": {
+																"value": "@utcnow()",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														},
+														"EndTime": {
+															"value": {
+																"value": "@utcnow()",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														},
+														"SourceCount": {
+															"value": {
+																"value": "@activity('LookupSourceCount_Incremental').output.firstRow.SourceCount",
+																"type": "Expression"
+															},
+															"type": "Int32"
+														},
+														"DestinationCount": {
+															"value": {
+																"value": "@activity('LookupTargetCount_Incremental').output.firstRow.DestinationCount",
+																"type": "Expression"
+															},
+															"type": "Int32"
+														},
+														"FailureDetails": {
+															"value": "",
+															"type": "String"
+														}
+													}
+												},
+												"linkedServiceName": {
+													"referenceName": "SqlServer_AdventureWorks",
+													"type": "LinkedServiceReference"
+												}
+											},
+											{
+												"name": "Execute_Format_Handler_Incremental",
+												"type": "ExecutePipeline",
+												"dependsOn": [
+													{
+														"activity": "LookupSourceCount_Incremental",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"pipeline": {
+														"referenceName": "PL_Format_Handler",
+														"type": "PipelineReference"
+													},
+													"waitOnCompletion": true,
+													"parameters": {
+														"FileFormat": {
+															"value": "@item().FileFormat",
+															"type": "Expression"
+														},
+														"FolderPath": {
+															"value": "@item().FolderPath",
+															"type": "Expression"
+														},
+														"FileName": {
+															"value": "@item().FileName",
+															"type": "Expression"
+														},
+														"SourceSchema": {
+															"value": "@item().SourceSchema",
+															"type": "Expression"
+														},
+														"SourceTable": {
+															"value": "@item().SourceTable",
+															"type": "Expression"
+														},
+														"SourceQuery": {
+															"value": "@concat(\n'SELECT * FROM ',\nitem().SourceSchema,\n'.',\nitem().SourceTable,\n' WHERE ',\nitem().WatermarkColumn,\n' > ''',\nactivity('Lookup_PreviousWatermark').output.firstRow.LastWatermarkValue,\n''' AND ',\nitem().WatermarkColumn,\n' <= ''',\nactivity('Lookup_CurrentWatermark').output.firstRow.CurrentWatermark,\n''''\n)",
+															"type": "Expression"
+														}
+													}
+												}
+											},
+											{
+												"name": "LookupSourceCount_Incremental",
+												"type": "Lookup",
+												"dependsOn": [
+													{
+														"activity": "Lookup_CurrentWatermark",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "SqlServerSource",
+														"sqlReaderQuery": {
+															"value": "@concat(\n'SELECT COUNT(*) AS SourceCount FROM ',\nitem().SourceSchema,\n'.',\nitem().SourceTable,\n' WHERE ',\nitem().WatermarkColumn,\n' > ''',\nactivity('Lookup_PreviousWatermark').output.firstRow.LastWatermarkValue,\n''' AND ',\nitem().WatermarkColumn,\n' <= ''',\nactivity('Lookup_CurrentWatermark').output.firstRow.CurrentWatermark,\n''''\n)",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"dataset": {
+														"referenceName": "DS_SQL_Dynamic",
+														"type": "DatasetReference",
+														"parameters": {
+															"TableName": "@item().SourceTable",
+															"SchemaName": "@item().SourceSchema"
+														}
+													}
+												}
+											}
+										]
+									}
+								]
+							}
+						},
+						{
+							"name": "Log_Execution_Start",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[stg].[usp_LogADFExecution]",
+								"storedProcedureParameters": {
+									"PipelineName": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"SourceSchema": {
+										"value": {
+											"value": "@item().SourceSchema",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"SourceTable": {
+										"value": {
+											"value": "@item().SourceTable",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"Status": {
+										"value": "STARTED",
+										"type": "String"
+									},
+									"StartTime": {
+										"value": {
+											"value": "@utcnow()",
+											"type": "Expression"
+										},
+										"type": "Datetime"
+									},
+									"EndTime": {
+										"value": {
+											"value": "@utcnow()",
+											"type": "Expression"
+										},
+										"type": "Datetime"
+									},
+									"SourceCount": {
+										"value": "0",
+										"type": "Int32"
+									},
+									"DestinationCount": {
+										"value": "0",
+										"type": "Int32"
+									},
+									"FailureDetails": {
+										"value": "",
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "SqlServer_AdventureWorks",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			}
+		],
+		"variables": {
+			"ValidationStatus": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2026-09-11T18:28:58Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

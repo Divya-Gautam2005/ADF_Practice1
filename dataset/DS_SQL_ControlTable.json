@@ -1,0 +1,17 @@
+{
+	"name": "DS_SQL_ControlTable",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "SqlServer_AdventureWorks",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "SqlServerTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": "stg",
+			"table": "ADF_ControlTable"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

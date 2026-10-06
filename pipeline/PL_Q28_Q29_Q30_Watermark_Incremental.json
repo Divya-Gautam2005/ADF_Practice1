@@ -1,0 +1,274 @@
+{
+	"name": "PL_Q28_Q29_Q30_Watermark_Incremental",
+	"properties": {
+		"activities": [
+			{
+				"name": "LookupPrevious",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "SqlServerSource",
+						"sqlReaderQuery": "SELECT LastWatermarkValue\nFROM stg.ADF_WatermarkControl\nWHERE SchemaName = 'Sales'\n  AND TableName = 'SalesOrderHeader';",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_SQL_WatermarkControl",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "LookupCurrent",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "LookupPrevious",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "SqlServerSource",
+						"sqlReaderQuery": "SELECT MAX(ModifiedDate) AS CurrentWatermark\nFROM Sales.SalesOrderHeader;",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_SQL_WatermarkControl",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "CopySQL_ADLS",
+				"type": "Copy",
+				"dependsOn": [
+					{
+						"activity": "LookupCurrent",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "SqlServerSource",
+						"sqlReaderQuery": {
+							"value": "@concat(\n'SELECT * FROM Sales.SalesOrderHeader ',\n'WHERE ModifiedDate > ''',\nactivity('LookupPrevious').output.firstRow.LastWatermarkValue,\n''' AND ModifiedDate <= ''',\nactivity('LookupCurrent').output.firstRow.CurrentWatermark,\n''''\n)",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"sink": {
+						"type": "DelimitedTextSink",
+						"storeSettings": {
+							"type": "AzureBlobFSWriteSettings"
+						},
+						"formatSettings": {
+							"type": "DelimitedTextWriteSettings",
+							"quoteAllText": true,
+							"fileExtension": ".txt"
+						}
+					},
+					"enableStaging": false,
+					"translator": {
+						"type": "TabularTranslator",
+						"typeConversion": true,
+						"typeConversionSettings": {
+							"allowDataTruncation": true,
+							"treatBooleanAsNumber": false
+						}
+					}
+				},
+				"inputs": [
+					{
+						"referenceName": "DS_SQL_Dynamic",
+						"type": "DatasetReference",
+						"parameters": {
+							"TableName": "SalesOrderHeader",
+							"SchemaName": "Sales"
+						}
+					}
+				],
+				"outputs": [
+					{
+						"referenceName": "DS_ADLS_Dynamic_CSV",
+						"type": "DatasetReference",
+						"parameters": {
+							"FolderName": "Sales/SalesOrderHeader/Incremental",
+							"FileName": "SalesOrderHeader_Incremental.csv"
+						}
+					}
+				]
+			},
+			{
+				"name": "UpdateWatermark",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Update_Insert_Merge",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[stg].[usp_UpdateSalesOrderHeaderWatermark]",
+					"storedProcedureParameters": {
+						"NewWatermark": {
+							"value": {
+								"value": "@activity('LookupCurrent').output.firstRow.CurrentWatermark",
+								"type": "Expression"
+							},
+							"type": "Datetime"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "SqlServer_AdventureWorks",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Copy_ADlS_Staging",
+				"type": "Copy",
+				"dependsOn": [
+					{
+						"activity": "CopySQL_ADLS",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "DelimitedTextSource",
+						"storeSettings": {
+							"type": "AzureBlobFSReadSettings",
+							"recursive": true,
+							"enablePartitionDiscovery": false
+						},
+						"formatSettings": {
+							"type": "DelimitedTextReadSettings"
+						}
+					},
+					"sink": {
+						"type": "SqlServerSink",
+						"writeBehavior": "insert",
+						"sqlWriterUseTableLock": false
+					},
+					"enableStaging": false,
+					"translator": {
+						"type": "TabularTranslator",
+						"typeConversion": true,
+						"typeConversionSettings": {
+							"allowDataTruncation": true,
+							"treatBooleanAsNumber": false
+						}
+					}
+				},
+				"inputs": [
+					{
+						"referenceName": "DS_ADLS_Dynamic_CSV",
+						"type": "DatasetReference",
+						"parameters": {
+							"FolderName": "Sales/SalesOrderHeader/Incremental",
+							"FileName": "SalesOrderHeader_Incremental.csv"
+						}
+					}
+				],
+				"outputs": [
+					{
+						"referenceName": "DS_SQL_SalesOrderHeader_Stg",
+						"type": "DatasetReference"
+					}
+				]
+			},
+			{
+				"name": "Update_Insert_Merge",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Copy_ADlS_Staging",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[stg].[usp_MergeSalesOrderHeader]"
+				},
+				"linkedServiceName": {
+					"referenceName": "SqlServer_AdventureWorks",
+					"type": "LinkedServiceReference"
+				}
+			}
+		],
+		"parameters": {
+			"schema": {
+				"type": "string",
+				"defaultValue": "Sales"
+			},
+			"table": {
+				"type": "string",
+				"defaultValue": "SalesOrderHeader"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2026-09-10T08:06:54Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
